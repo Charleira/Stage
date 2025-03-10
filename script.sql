@@ -40,6 +40,9 @@ CREATE TABLE tournament_registrations (
   id INT AUTO_INCREMENT PRIMARY KEY,
   tournament_id INT NOT NULL,
   team_id INT NOT NULL,
+  status ENUM('pendente', 'pago', 'cancelado') DEFAULT 'pendente',
+  payment_id VARCHAR(255) NOT NULL,
+   qr_code TEXT NOT NULL,
   FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
   FOREIGN KEY (team_id) REFERENCES teams(id),
   CONSTRAINT unique_team_per_tournament UNIQUE (tournament_id, team_id)
