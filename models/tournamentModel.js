@@ -22,14 +22,13 @@ const Tournament = {
     return result.length > 0;
   },
 
-  // Registrar time no torneio
-  registerTeam: async (tournamentId, teamId) => {
+  // Registrar time no torneio com pagamento
+registerTeam: async (tournamentId, teamId, paymentId, qrCode) => {
     const [result] = await db.execute(
-      'INSERT INTO tournament_registrations (tournament_id, team_id) VALUES (?, ?)',
-      [tournamentId, teamId]
+      'INSERT INTO tournament_registrations (tournament_id, team_id, status, payment_id, qr_code) VALUES (?, ?, ?, ?, ?)',
+      [tournamentId, teamId, 'pendente', paymentId, qrCode]
     );
     return result;
   },
-};
 
 module.exports = Tournament;
