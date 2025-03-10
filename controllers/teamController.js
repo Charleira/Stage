@@ -18,22 +18,42 @@ const createTeam = async (req, res) => {
 
 // Adicionar jogador à equipe
 const addPlayer = async (req, res) => {
-  const { teamId, playerId } = req.body;
+  const { teamId } = req.params;
+  const { playerId } = req.body; // ID do jogador a ser convidado
 
   try {
-    const player = await User.findById(playerId);
-    if (!player) return res.status(400).json({ message: 'Jogador não encontrado!' });
+    // Verifica se o time existe
+    const [team] = await db.execute('SELECT captain_id FROM teams WHERE id = ?', [teamId]);
 
-    // Verificar se a equipe já tem 7 jogadores
-    const players = await Team.getTeamPlayers(teamId);
-    if (players.length >= 7) {
-      return res.status(400).json({ message: 'A equipe já tem 7 jogadores!' });
+    if (!team) {
+      return res.status(404).json({ message: 'Equipe não encontrada' });
     }
 
-    await Team.addPlayer(teamId, playerId);
-    res.status(200).json({ message: 'Jogador adicionado à equipe!' });
+    // Verifica se o capitão está fazendo a ação
+    if (team.captain_id !== req.user.id) {
+      return res.status(403).json({ message: 'Somente o Capitão pode adicionar jogadores.' });
+    }
+
+    // Convida o jogador para a equipe
+    await db.execute('INSERT INTO invitations (team_id, player_id, status) VALUES (?, ?, ?)', [teamId, playerId, 'pending']);
+
+    return res.status(200).json({ message: 'Convite enviado com sucesso.' });
   } catch (err) {
-    res.status(500).json({ message: 'Erro ao adicionar jogador', error: err.message });
+    return res.status(500).json({ message: 'Erro ao adicionar jogador', error: err.message });
+  }
+};
+
+// Aceitar convite para a equipe
+const acceptInvite = async (req, res) => {
+  const { teamId } = req.params;
+
+  try {
+    // Aceita o convite do jogador
+    await db.execute('UPDATE invitations SET status = ? WHERE team_id = ? AND player_id = ?', ['accepted', teamId, req.user.id]);
+
+    return res.status(200).json({ message: 'Convite aceito com sucesso.' });
+  } catch (err) {
+    return res.status(500).json({ message: 'Erro ao aceitar convite', error: err.message });
   }
 };
 
@@ -52,4 +72,4 @@ const getTeamInfo = async (req, res) => {
   }
 };
 
-module.exports = { createTeam, addPlayer, getTeamInfo };
+module.exports = { createTeam, addPlayer, getTeamInfo, acceptInvite };
