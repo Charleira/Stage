@@ -32,7 +32,7 @@ const registerTeamForTournament = async (req, res) => {
     if (players.length < 5) {
       return res.status(400).json({ message: 'O time precisa ter pelo menos 5 jogadores para se inscrever no torneio.' });
     }
-    
+
     const isRegistered = await Tournament.checkIfTeamRegistered(tournamentId, teamId);
     if (isRegistered) {
       return res.status(400).json({ message: 'O time já está inscrito neste torneio!' });
@@ -93,28 +93,41 @@ const generateBrackets = async (req, res) => {
   const { tournamentId } = req.params;
 
   try {
-    // Busca os times inscritos
+    // Busca os times inscritos e pagos
     const [teams] = await db.execute(
       'SELECT team_id FROM tournament_registrations WHERE tournament_id = ? AND status = "pago"',
       [tournamentId]
     );
 
-    if (teams.length < 2) {
-      return res.status(400).json({ message: 'Número insuficiente de times para gerar chaves' });
+    // Verifica se o número de times é válido (pode ser entre 2 e 64)
+    if (teams.length < 16 || teams.length > 64) {
+      return res.status(400).json({ message: 'O número de times deve ser entre 2 e 64.' });
     }
+
+    // Calcula a quantidade de times que precisam passar "Bye" (caso o número de times não seja uma potência de 2)
+    const nearestPowerOfTwo = Math.pow(2, Math.floor(Math.log2(teams.length)));
+    const byesCount = nearestPowerOfTwo - teams.length;
 
     // Embaralhar times aleatoriamente
     teams.sort(() => Math.random() - 0.5);
 
-    // Criar pares para partidas eliminatórias
+    // Criar pares para partidas eliminatórias, considerando os times que passaram "Bye"
     const matches = [];
-    for (let i = 0; i < teams.length; i += 2) {
+    const byes = [];
+
+    // Se houverem "Byes", os primeiros times vão diretamente para a próxima fase
+    for (let i = 0; i < byesCount; i++) {
+      byes.push(teams[i].team_id);
+    }
+
+    // Agora, embaralhar os times restantes e emparelhá-los para a primeira rodada
+    for (let i = byesCount; i < teams.length; i += 2) {
       if (teams[i + 1]) {
         matches.push([teams[i].team_id, teams[i + 1].team_id]);
       }
     }
 
-    // Salvar no banco de dados
+    // Salvar os matches e os times que passaram por Bye no banco de dados
     for (const match of matches) {
       await db.execute(
         'INSERT INTO tournament_brackets (tournament_id, team1_id, team2_id) VALUES (?, ?, ?)',
@@ -122,11 +135,34 @@ const generateBrackets = async (req, res) => {
       );
     }
 
-    res.status(200).json({ message: 'Chaves do torneio geradas com sucesso!', matches });
+    // Salvar os times que passaram por Bye na tabela de chaves
+    for (const bye of byes) {
+      await db.execute(
+        'INSERT INTO tournament_brackets (tournament_id, team1_id, team2_id) VALUES (?, ?, ?)',
+        [tournamentId, bye, null] // null indica que o time passou por Bye
+      );
+    }
+
+    // Criar rodadas até o vencedor
+    let currentMatches = matches;
+    let round = 1;
+    while (currentMatches.length > 1) {
+      const nextRoundMatches = [];
+      for (let i = 0; i < currentMatches.length; i += 2) {
+        if (currentMatches[i + 1]) {
+          nextRoundMatches.push([currentMatches[i][0], currentMatches[i + 1][0]]);
+        }
+      }
+      currentMatches = nextRoundMatches;
+      round++;
+    }
+
+    res.status(200).json({ message: 'Chaves do torneio geradas com sucesso!', matches, byes });
   } catch (error) {
     res.status(500).json({ message: 'Erro ao gerar chaves do torneio', error: error.message });
   }
 };
+
 
 // Obter todos os torneios
 const getAllTournaments = async (req, res) => {
